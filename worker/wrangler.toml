@@ -1,0 +1,6 @@
+name = "seo-dashboard-worker"
+main = "index.js"
+compatibility_date = "2026-06-16"
+
+[vars]
+SUPABASE_URL = "https://baxsmgcmlxpyaendnagj.supabase.co"

@@ -12,7 +12,7 @@ export function ConsultasTabla({ consultas }) {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <CardTitle>Consultas de búsqueda</CardTitle>
             <p className="text-xs text-[#626264] mt-0.5">
@@ -25,29 +25,30 @@ export function ConsultasTabla({ consultas }) {
               value={filtro}
               onChange={(e) => setFiltro(e.target.value)}
               placeholder="Buscar..."
-              className="pl-8 pr-3 py-1.5 text-sm rounded-lg border border-[#F1F1F4] bg-white focus:outline-none focus:ring-2 focus:ring-[#115A36]/20 focus:border-[#115A36] w-44"
+              className="w-full sm:w-44 pl-8 pr-3 py-1.5 text-sm rounded-lg border border-[#F1F1F4] bg-white focus:outline-none focus:ring-2 focus:ring-[#115A36]/20 focus:border-[#115A36]"
             />
           </div>
         </div>
       </CardHeader>
       <CardContent className="px-0">
         <div className="max-h-96 overflow-y-auto">
-          <table className="w-full">
+          {/* Desktop: tabla completa */}
+          <table className="hidden sm:table w-full">
             <thead className="sticky top-0 bg-[#F8F8FB] border-y border-[#F1F1F4]">
               <tr>
-                <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-[#626264] px-6 py-2.5">
+                <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-[#626264] px-4 py-2.5">
                   Consulta
                 </th>
-                <th className="text-right text-[10px] font-semibold uppercase tracking-wider text-[#626264] px-3 py-2.5 w-20">
+                <th className="text-right text-[10px] font-semibold uppercase tracking-wider text-[#626264] px-2 py-2.5 w-16">
                   Clics
                 </th>
-                <th className="text-right text-[10px] font-semibold uppercase tracking-wider text-[#626264] px-3 py-2.5 w-24">
+                <th className="text-right text-[10px] font-semibold uppercase tracking-wider text-[#626264] px-2 py-2.5 w-16">
                   Impr.
                 </th>
-                <th className="text-right text-[10px] font-semibold uppercase tracking-wider text-[#626264] px-3 py-2.5 w-20">
+                <th className="text-right text-[10px] font-semibold uppercase tracking-wider text-[#626264] px-2 py-2.5 w-16">
                   CTR
                 </th>
-                <th className="text-right text-[10px] font-semibold uppercase tracking-wider text-[#626264] px-6 py-2.5 w-20">
+                <th className="text-right text-[10px] font-semibold uppercase tracking-wider text-[#626264] px-4 py-2.5 w-14">
                   Pos.
                 </th>
               </tr>
@@ -70,23 +71,23 @@ export function ConsultasTabla({ consultas }) {
                     key={c.id}
                     className="border-b border-[#F1F1F4] hover:bg-[#F8F8FB] transition-colors"
                   >
-                    <td className="px-6 py-3 text-sm text-black font-mono text-xs">
+                    <td className="px-4 py-3 text-xs text-black font-mono break-words">
                       {c.consulta}
                     </td>
-                    <td className="px-3 py-3 text-right">
+                    <td className="px-2 py-3 text-right">
                       {c.clics > 0 ? (
                         <Badge variant="green">{c.clics}</Badge>
                       ) : (
                         <span className="text-[#999999] text-xs">—</span>
                       )}
                     </td>
-                    <td className="px-3 py-3 text-right text-sm text-[#626264]">
+                    <td className="px-2 py-3 text-right text-xs text-[#626264]">
                       {c.impresiones}
                     </td>
-                    <td className="px-3 py-3 text-right text-sm text-[#626264]">
+                    <td className="px-2 py-3 text-right text-xs text-[#626264]">
                       {(c.ctr * 100).toFixed(1)}%
                     </td>
-                    <td className="px-6 py-3 text-right text-sm text-[#626264]">
+                    <td className="px-4 py-3 text-right text-xs text-[#626264]">
                       #{c.posicion?.toFixed(1) || "—"}
                     </td>
                   </tr>
@@ -94,6 +95,56 @@ export function ConsultasTabla({ consultas }) {
               )}
             </tbody>
           </table>
+
+          {/* Mobile: cards apiladas */}
+          <div className="sm:hidden divide-y divide-[#F1F1F4]">
+            {datos.length === 0 ? (
+              <p className="py-12 text-center text-sm text-[#626264]">
+                {filtro
+                  ? "No se encontraron consultas"
+                  : "Sin datos de consultas"}
+              </p>
+            ) : (
+              datos.map((c) => (
+                <div
+                  key={c.id}
+                  className="px-4 py-3 hover:bg-[#F8F8FB] transition-colors"
+                >
+                  <p className="text-xs text-black font-mono break-words mb-2">
+                    {c.consulta}
+                  </p>
+                  <div className="flex items-center justify-between gap-3 text-[11px]">
+                    <div className="flex items-center gap-1">
+                      <span className="text-[#999999]">Clics:</span>
+                      {c.clics > 0 ? (
+                        <Badge variant="green">{c.clics}</Badge>
+                      ) : (
+                        <span className="text-[#999999]">—</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[#999999]">Impr:</span>
+                      <span className="text-[#333333] font-medium">
+                        {c.impresiones}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[#999999]">CTR:</span>
+                      <span className="text-[#333333] font-medium">
+                        {(c.ctr * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[#999999]">Pos:</span>
+                      <span className="text-[#333333] font-medium">
+                        #{c.posicion?.toFixed(1) || "—"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>

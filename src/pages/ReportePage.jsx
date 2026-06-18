@@ -53,7 +53,7 @@ export default function ReportePage() {
         lastUpdate={lastUpdate}
       />
 
-      <div className="p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto overflow-x-hidden">
         {/* Selector + título */}
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>

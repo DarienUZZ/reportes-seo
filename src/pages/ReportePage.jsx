@@ -47,7 +47,7 @@ export default function ReportePage() {
   return (
     <Layout>
       <Topbar
-        cliente={cliente}
+        slugActual={slug}
         onRefresh={refresh}
         refreshing={refreshing}
         lastUpdate={lastUpdate}

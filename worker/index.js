@@ -42,18 +42,49 @@ export default {
 
       if (necesitaActualizar) {
         const token = await getGoogleToken(env);
+        const warnings = [];
 
-        const [ga4Data, scData] = await Promise.all([
-          fetchGA4(cliente.ga4_property_id, anio, mes, token),
-          fetchSearchConsole(slug, anio, mes, token),
-        ]);
+        // GA4 — opcional
+        let ga4Data = null;
+        if (
+          cliente.tiene_ga4 &&
+          cliente.ga4_property_id &&
+          !cliente.ga4_property_id.includes("PENDIENTE")
+        ) {
+          try {
+            ga4Data = await fetchGA4(cliente.ga4_property_id, anio, mes, token);
+          } catch (err) {
+            warnings.push({ fuente: "GA4", mensaje: err.message });
+          }
+        }
+
+        // Search Console — opcional
+        let scData = null;
+        if (cliente.tiene_search_console && cliente.search_console_site) {
+          try {
+            scData = await fetchSearchConsole(
+              cliente.search_console_site,
+              anio,
+              mes,
+              token,
+            );
+          } catch (err) {
+            warnings.push({ fuente: "Search Console", mensaje: err.message });
+          }
+        }
 
         await guardarEnSupabase(reporte.id, ga4Data, scData, env);
         await actualizarCache(reporte.id, env);
 
         const datosActualizados = await getDatosReporte(reporte.id, env);
         return json(
-          { cliente, reporte, datos: datosActualizados, actualizado: true },
+          {
+            cliente,
+            reporte,
+            datos: datosActualizados,
+            actualizado: true,
+            warnings: warnings.length > 0 ? warnings : null,
+          },
           200,
           corsHeaders,
         );
@@ -69,8 +100,6 @@ export default {
     }
   },
 };
-
-// ─── HELPERS ──────────────────────────────────────────────
 
 function json(data, status, headers) {
   return new Response(JSON.stringify(data), { status, headers });
@@ -115,81 +144,180 @@ async function actualizarCache(reporteId, env) {
 }
 
 async function getDatosReporte(reporteId, env) {
-  const [resumen, diario, consultas, paginas, paises, dispositivos] =
-    await Promise.all([
-      supabaseFetch(
-        `/rest/v1/metricas_resumen?reporte_id=eq.${reporteId}&limit=1`,
-        env,
-      ).then((r) => r.json()),
-      supabaseFetch(
-        `/rest/v1/metricas_diario?reporte_id=eq.${reporteId}&order=fecha.asc`,
-        env,
-      ).then((r) => r.json()),
-      supabaseFetch(
-        `/rest/v1/metricas_consultas?reporte_id=eq.${reporteId}&order=clics.desc.nullslast&limit=50`,
-        env,
-      ).then((r) => r.json()),
-      supabaseFetch(
-        `/rest/v1/metricas_paginas?reporte_id=eq.${reporteId}&order=clics.desc.nullslast&limit=20`,
-        env,
-      ).then((r) => r.json()),
-      supabaseFetch(
-        `/rest/v1/metricas_paises?reporte_id=eq.${reporteId}&select=*,cat_paises(codigo,nombre)&order=clics.desc.nullslast`,
-        env,
-      ).then((r) => r.json()),
-      supabaseFetch(
-        `/rest/v1/metricas_dispositivos?reporte_id=eq.${reporteId}&select=*,cat_dispositivos(nombre)&order=clics.desc.nullslast`,
-        env,
-      ).then((r) => r.json()),
-    ]);
+  const [
+    resumen,
+    diario,
+    consultas,
+    paginas,
+    paises,
+    dispositivos,
+    ga4Resumen,
+    ga4Diario,
+    ga4Canales,
+    ga4Paginas,
+    ga4Paises,
+    ga4Dispositivos,
+  ] = await Promise.all([
+    // Search Console
+    supabaseFetch(
+      `/rest/v1/metricas_resumen?reporte_id=eq.${reporteId}&limit=1`,
+      env,
+    ).then((r) => r.json()),
+    supabaseFetch(
+      `/rest/v1/metricas_diario?reporte_id=eq.${reporteId}&order=fecha.asc`,
+      env,
+    ).then((r) => r.json()),
+    supabaseFetch(
+      `/rest/v1/metricas_consultas?reporte_id=eq.${reporteId}&order=clics.desc.nullslast&limit=50`,
+      env,
+    ).then((r) => r.json()),
+    supabaseFetch(
+      `/rest/v1/metricas_paginas?reporte_id=eq.${reporteId}&order=clics.desc.nullslast&limit=20`,
+      env,
+    ).then((r) => r.json()),
+    supabaseFetch(
+      `/rest/v1/metricas_paises?reporte_id=eq.${reporteId}&select=*,cat_paises(codigo,nombre)&order=clics.desc.nullslast`,
+      env,
+    ).then((r) => r.json()),
+    supabaseFetch(
+      `/rest/v1/metricas_dispositivos?reporte_id=eq.${reporteId}&select=*,cat_dispositivos(nombre)&order=clics.desc.nullslast`,
+      env,
+    ).then((r) => r.json()),
+    // GA4
+    supabaseFetch(
+      `/rest/v1/metricas_ga4_resumen?reporte_id=eq.${reporteId}&limit=1`,
+      env,
+    ).then((r) => r.json()),
+    supabaseFetch(
+      `/rest/v1/metricas_ga4_diario?reporte_id=eq.${reporteId}&order=fecha.asc`,
+      env,
+    ).then((r) => r.json()),
+    supabaseFetch(
+      `/rest/v1/metricas_ga4_canales?reporte_id=eq.${reporteId}&order=sesiones.desc.nullslast`,
+      env,
+    ).then((r) => r.json()),
+    supabaseFetch(
+      `/rest/v1/metricas_ga4_paginas?reporte_id=eq.${reporteId}&order=vistas.desc.nullslast&limit=20`,
+      env,
+    ).then((r) => r.json()),
+    supabaseFetch(
+      `/rest/v1/metricas_ga4_paises?reporte_id=eq.${reporteId}&select=*,cat_paises(codigo,nombre)&order=sesiones.desc.nullslast`,
+      env,
+    ).then((r) => r.json()),
+    supabaseFetch(
+      `/rest/v1/metricas_ga4_dispositivos?reporte_id=eq.${reporteId}&select=*,cat_dispositivos(nombre)&order=sesiones.desc.nullslast`,
+      env,
+    ).then((r) => r.json()),
+  ]);
+
   return {
+    // Search Console
     resumen: resumen[0],
     diario,
     consultas,
     paginas,
     paises,
     dispositivos,
+    // GA4
+    ga4: {
+      resumen: ga4Resumen[0],
+      diario: ga4Diario,
+      canales: ga4Canales,
+      paginas: ga4Paginas,
+      paises: ga4Paises,
+      dispositivos: ga4Dispositivos,
+    },
   };
 }
-
-// ─── GA4 ──────────────────────────────────────────────────
 
 async function fetchGA4(propertyId, anio, mes, token) {
   const fechaInicio = `${anio}-${String(mes).padStart(2, "0")}-01`;
   const fechaFin = new Date(anio, mes, 0).toISOString().split("T")[0];
 
-  const body = {
-    dateRanges: [{ startDate: fechaInicio, endDate: fechaFin }],
-    dimensions: [{ name: "date" }],
-    metrics: [
-      { name: "sessions" },
-      { name: "totalUsers" },
-      { name: "screenPageViews" },
-    ],
-  };
-
-  const res = await fetch(
-    `https://analyticsdata.googleapis.com/v1beta/${propertyId}:runReport`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
+  async function runReport(body) {
+    const res = await fetch(
+      `https://analyticsdata.googleapis.com/v1beta/${propertyId}:runReport`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          dateRanges: [{ startDate: fechaInicio, endDate: fechaFin }],
+          ...body,
+        }),
       },
-      body: JSON.stringify(body),
-    },
-  );
+    );
+    if (!res.ok) throw new Error(`GA4 error: ${await res.text()}`);
+    return res.json();
+  }
 
-  if (!res.ok) throw new Error(`GA4 error: ${await res.text()}`);
-  return res.json();
+  // Ejecutamos todos los reportes en paralelo
+  const [resumen, diario, canales, paginas, paises, dispositivos] =
+    await Promise.all([
+      // Resumen mensual total
+      runReport({
+        metrics: [
+          { name: "totalUsers" },
+          { name: "newUsers" },
+          { name: "sessions" },
+          { name: "screenPageViews" },
+          { name: "averageSessionDuration" },
+          { name: "bounceRate" },
+          { name: "eventCount" },
+        ],
+      }),
+      // Por día
+      runReport({
+        dimensions: [{ name: "date" }],
+        metrics: [
+          { name: "totalUsers" },
+          { name: "sessions" },
+          { name: "screenPageViews" },
+        ],
+        orderBys: [{ dimension: { dimensionName: "date" } }],
+      }),
+      // Por canal
+      runReport({
+        dimensions: [{ name: "sessionDefaultChannelGroup" }],
+        metrics: [
+          { name: "sessions" },
+          { name: "totalUsers" },
+          { name: "averageSessionDuration" },
+        ],
+        orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+      }),
+      // Por página
+      runReport({
+        dimensions: [{ name: "pagePath" }, { name: "pageTitle" }],
+        metrics: [
+          { name: "screenPageViews" },
+          { name: "totalUsers" },
+          { name: "averageSessionDuration" },
+        ],
+        orderBys: [{ metric: { metricName: "screenPageViews" }, desc: true }],
+        limit: 20,
+      }),
+      // Por país
+      runReport({
+        dimensions: [{ name: "countryId" }],
+        metrics: [{ name: "sessions" }, { name: "totalUsers" }],
+        orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+      }),
+      // Por dispositivo
+      runReport({
+        dimensions: [{ name: "deviceCategory" }],
+        metrics: [{ name: "sessions" }, { name: "totalUsers" }],
+      }),
+    ]);
+
+  return { resumen, diario, canales, paginas, paises, dispositivos };
 }
 
-// ─── SEARCH CONSOLE ───────────────────────────────────────
-
-async function fetchSearchConsole(slug, anio, mes, token) {
+async function fetchSearchConsole(siteUrl, anio, mes, token) {
   const fechaInicio = `${anio}-${String(mes).padStart(2, "0")}-01`;
   const fechaFin = new Date(anio, mes, 0).toISOString().split("T")[0];
-  const siteUrl = `sc-domain:${slug}.com`;
 
   async function query(dimensions) {
     const res = await fetch(
@@ -210,26 +338,6 @@ async function fetchSearchConsole(slug, anio, mes, token) {
     );
     if (!res.ok) {
       const errTxt = await res.text();
-      if (errTxt.includes("does not match any sites")) {
-        const res2 = await fetch(
-          `https://searchconsole.googleapis.com/webmasters/v3/sites/${encodeURIComponent(`https://${slug}.com/`)}/searchAnalytics/query`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              startDate: fechaInicio,
-              endDate: fechaFin,
-              dimensions,
-              rowLimit: 1000,
-            }),
-          },
-        );
-        if (!res2.ok) throw new Error(`SC error: ${await res2.text()}`);
-        return res2.json();
-      }
       throw new Error(`SC error: ${errTxt}`);
     }
     return res.json();
@@ -246,11 +354,10 @@ async function fetchSearchConsole(slug, anio, mes, token) {
   return { diario, consultas, paginas, paises, dispositivos };
 }
 
-// ─── GUARDAR EN SUPABASE ──────────────────────────────────
-
 async function guardarEnSupabase(reporteId, ga4Data, scData, env) {
   // Limpiar datos anteriores del reporte
   await Promise.all([
+    // Search Console
     supabaseFetch(
       `/rest/v1/metricas_diario?reporte_id=eq.${reporteId}`,
       env,
@@ -281,41 +388,160 @@ async function guardarEnSupabase(reporteId, ga4Data, scData, env) {
       env,
       "DELETE",
     ),
+    // GA4
+    supabaseFetch(
+      `/rest/v1/metricas_ga4_resumen?reporte_id=eq.${reporteId}`,
+      env,
+      "DELETE",
+    ),
+    supabaseFetch(
+      `/rest/v1/metricas_ga4_diario?reporte_id=eq.${reporteId}`,
+      env,
+      "DELETE",
+    ),
+    supabaseFetch(
+      `/rest/v1/metricas_ga4_canales?reporte_id=eq.${reporteId}`,
+      env,
+      "DELETE",
+    ),
+    supabaseFetch(
+      `/rest/v1/metricas_ga4_paginas?reporte_id=eq.${reporteId}`,
+      env,
+      "DELETE",
+    ),
+    supabaseFetch(
+      `/rest/v1/metricas_ga4_paises?reporte_id=eq.${reporteId}`,
+      env,
+      "DELETE",
+    ),
+    supabaseFetch(
+      `/rest/v1/metricas_ga4_dispositivos?reporte_id=eq.${reporteId}`,
+      env,
+      "DELETE",
+    ),
   ]);
 
-  // ─── DIARIO ───
-  const ga4Diario = {};
-  for (const row of ga4Data.rows || []) {
-    const fecha = formatGA4Date(row.dimensionValues[0].value);
-    ga4Diario[fecha] = {
-      sesiones: parseInt(row.metricValues[0].value) || 0,
-    };
+  // ═══════════════════════════════════════════════
+  // SEARCH CONSOLE
+  // ═══════════════════════════════════════════════
+  let totalClics = 0;
+  let totalImpr = 0;
+  let avgCtr = 0;
+  let avgPos = 0;
+
+  if (scData) {
+    const filasDiario = (scData.diario.rows || []).map((row) => ({
+      reporte_id: reporteId,
+      fecha: row.keys[0],
+      clics: row.clicks || 0,
+      impresiones: row.impressions || 0,
+      ctr: row.ctr || 0,
+      posicion: row.position || 0,
+    }));
+
+    if (filasDiario.length) {
+      await supabaseFetch("/rest/v1/metricas_diario", env, "POST", filasDiario);
+    }
+
+    totalClics = filasDiario.reduce((s, r) => s + r.clics, 0);
+    totalImpr = filasDiario.reduce((s, r) => s + r.impresiones, 0);
+    avgCtr = totalImpr > 0 ? totalClics / totalImpr : 0;
+    const posVals = filasDiario
+      .filter((r) => r.posicion > 0)
+      .map((r) => r.posicion);
+    avgPos = posVals.length
+      ? posVals.reduce((a, b) => a + b, 0) / posVals.length
+      : 0;
+
+    // Consultas
+    const filasConsultas = (scData.consultas.rows || [])
+      .slice(0, 100)
+      .map((row) => ({
+        reporte_id: reporteId,
+        consulta: row.keys[0],
+        clics: row.clicks || 0,
+        impresiones: row.impressions || 0,
+        ctr: parseFloat((row.ctr || 0).toFixed(4)),
+        posicion: parseFloat((row.position || 0).toFixed(2)),
+      }));
+    if (filasConsultas.length) {
+      await supabaseFetch(
+        "/rest/v1/metricas_consultas",
+        env,
+        "POST",
+        filasConsultas,
+      );
+    }
+
+    // Páginas
+    const filasPaginas = (scData.paginas.rows || [])
+      .slice(0, 50)
+      .map((row) => ({
+        reporte_id: reporteId,
+        url: row.keys[0],
+        clics: row.clicks || 0,
+        impresiones: row.impressions || 0,
+        ctr: parseFloat((row.ctr || 0).toFixed(4)),
+        posicion: parseFloat((row.position || 0).toFixed(2)),
+      }));
+    if (filasPaginas.length) {
+      await supabaseFetch(
+        "/rest/v1/metricas_paginas",
+        env,
+        "POST",
+        filasPaginas,
+      );
+    }
+
+    // Países
+    const paisesMap = await getPaisesMap(env);
+    const filasPaises = [];
+    for (const row of scData.paises.rows || []) {
+      const codigoISO3 = row.keys[0].toUpperCase();
+      const codigoISO2 = ISO3_TO_ISO2[codigoISO3];
+      if (!codigoISO2) continue;
+      const paisId = paisesMap[codigoISO2];
+      if (!paisId) continue;
+      filasPaises.push({
+        reporte_id: reporteId,
+        pais_id: paisId,
+        clics: row.clicks || 0,
+        impresiones: row.impressions || 0,
+        ctr: parseFloat((row.ctr || 0).toFixed(4)),
+        posicion: parseFloat((row.position || 0).toFixed(2)),
+      });
+    }
+    if (filasPaises.length) {
+      await supabaseFetch("/rest/v1/metricas_paises", env, "POST", filasPaises);
+    }
+
+    // Dispositivos
+    const dispMap = await getDispositivosMap(env);
+    const filasDisp = [];
+    for (const row of scData.dispositivos.rows || []) {
+      const nombre = row.keys[0].toUpperCase();
+      const dispId = dispMap[nombre];
+      if (!dispId) continue;
+      filasDisp.push({
+        reporte_id: reporteId,
+        dispositivo_id: dispId,
+        clics: row.clicks || 0,
+        impresiones: row.impressions || 0,
+        ctr: parseFloat((row.ctr || 0).toFixed(4)),
+        posicion: parseFloat((row.position || 0).toFixed(2)),
+      });
+    }
+    if (filasDisp.length) {
+      await supabaseFetch(
+        "/rest/v1/metricas_dispositivos",
+        env,
+        "POST",
+        filasDisp,
+      );
+    }
   }
 
-  const filasDiario = (scData.diario.rows || []).map((row) => ({
-    reporte_id: reporteId,
-    fecha: row.keys[0],
-    clics: row.clicks || 0,
-    impresiones: row.impressions || 0,
-    ctr: row.ctr || 0,
-    posicion: row.position || 0,
-  }));
-
-  if (filasDiario.length) {
-    await supabaseFetch("/rest/v1/metricas_diario", env, "POST", filasDiario);
-  }
-
-  // ─── RESUMEN ───
-  const totalClics = filasDiario.reduce((s, r) => s + r.clics, 0);
-  const totalImpr = filasDiario.reduce((s, r) => s + r.impresiones, 0);
-  const avgCtr = totalImpr > 0 ? totalClics / totalImpr : 0;
-  const posVals = filasDiario
-    .filter((r) => r.posicion > 0)
-    .map((r) => r.posicion);
-  const avgPos = posVals.length
-    ? posVals.reduce((a, b) => a + b, 0) / posVals.length
-    : 0;
-
+  // Resumen Search Console (siempre se guarda, aunque sea 0)
   await supabaseFetch("/rest/v1/metricas_resumen", env, "POST", {
     reporte_id: reporteId,
     clics: totalClics,
@@ -324,88 +550,131 @@ async function guardarEnSupabase(reporteId, ga4Data, scData, env) {
     posicion_media: parseFloat(avgPos.toFixed(2)),
   });
 
-  // ─── CONSULTAS ───
-  const filasConsultas = (scData.consultas.rows || [])
-    .slice(0, 100)
-    .map((row) => ({
+  // ═══════════════════════════════════════════════
+  // GOOGLE ANALYTICS 4
+  // ═══════════════════════════════════════════════
+  if (ga4Data) {
+    // ── RESUMEN ──
+    const r = ga4Data.resumen.rows?.[0];
+    if (r) {
+      await supabaseFetch("/rest/v1/metricas_ga4_resumen", env, "POST", {
+        reporte_id: reporteId,
+        usuarios: parseInt(r.metricValues[0].value) || 0,
+        usuarios_nuevos: parseInt(r.metricValues[1].value) || 0,
+        sesiones: parseInt(r.metricValues[2].value) || 0,
+        paginas_vistas: parseInt(r.metricValues[3].value) || 0,
+        duracion_media_segundos: parseFloat(r.metricValues[4].value) || 0,
+        tasa_rebote: parseFloat(r.metricValues[5].value) || 0,
+        eventos: parseInt(r.metricValues[6].value) || 0,
+      });
+    } else {
+      await supabaseFetch("/rest/v1/metricas_ga4_resumen", env, "POST", {
+        reporte_id: reporteId,
+      });
+    }
+
+    // ── DIARIO ──
+    const filasGa4Diario = (ga4Data.diario.rows || []).map((row) => ({
       reporte_id: reporteId,
-      consulta: row.keys[0],
-      clics: row.clicks || 0,
-      impresiones: row.impressions || 0,
-      ctr: parseFloat((row.ctr || 0).toFixed(4)),
-      posicion: parseFloat((row.position || 0).toFixed(2)),
+      fecha: formatGA4Date(row.dimensionValues[0].value),
+      usuarios: parseInt(row.metricValues[0].value) || 0,
+      sesiones: parseInt(row.metricValues[1].value) || 0,
+      paginas_vistas: parseInt(row.metricValues[2].value) || 0,
     }));
-  if (filasConsultas.length) {
-    await supabaseFetch(
-      "/rest/v1/metricas_consultas",
-      env,
-      "POST",
-      filasConsultas,
-    );
-  }
+    if (filasGa4Diario.length) {
+      await supabaseFetch(
+        "/rest/v1/metricas_ga4_diario",
+        env,
+        "POST",
+        filasGa4Diario,
+      );
+    }
 
-  // ─── PÁGINAS ───
-  const filasPaginas = (scData.paginas.rows || []).slice(0, 50).map((row) => ({
-    reporte_id: reporteId,
-    url: row.keys[0],
-    clics: row.clicks || 0,
-    impresiones: row.impressions || 0,
-    ctr: parseFloat((row.ctr || 0).toFixed(4)),
-    posicion: parseFloat((row.position || 0).toFixed(2)),
-  }));
-  if (filasPaginas.length) {
-    await supabaseFetch("/rest/v1/metricas_paginas", env, "POST", filasPaginas);
-  }
-
-  // ─── PAÍSES ───
-  const paisesMap = await getPaisesMap(env);
-  const filasPaises = [];
-  for (const row of scData.paises.rows || []) {
-    const codigoISO3 = row.keys[0].toUpperCase();
-    const codigoISO2 = ISO3_TO_ISO2[codigoISO3];
-    if (!codigoISO2) continue;
-    const paisId = paisesMap[codigoISO2];
-    if (!paisId) continue;
-    filasPaises.push({
+    // ── CANALES ──
+    const filasGa4Canales = (ga4Data.canales.rows || []).map((row) => ({
       reporte_id: reporteId,
-      pais_id: paisId,
-      clics: row.clicks || 0,
-      impresiones: row.impressions || 0,
-      ctr: parseFloat((row.ctr || 0).toFixed(4)),
-      posicion: parseFloat((row.position || 0).toFixed(2)),
-    });
-  }
-  if (filasPaises.length) {
-    await supabaseFetch("/rest/v1/metricas_paises", env, "POST", filasPaises);
-  }
+      canal: row.dimensionValues[0].value || "Desconocido",
+      sesiones: parseInt(row.metricValues[0].value) || 0,
+      usuarios: parseInt(row.metricValues[1].value) || 0,
+      duracion_media: parseFloat(row.metricValues[2].value) || 0,
+    }));
+    if (filasGa4Canales.length) {
+      await supabaseFetch(
+        "/rest/v1/metricas_ga4_canales",
+        env,
+        "POST",
+        filasGa4Canales,
+      );
+    }
 
-  // ─── DISPOSITIVOS ───
-  const dispMap = await getDispositivosMap(env);
-  const filasDisp = [];
-  for (const row of scData.dispositivos.rows || []) {
-    const nombre = row.keys[0].toUpperCase();
-    const dispId = dispMap[nombre];
-    if (!dispId) continue;
-    filasDisp.push({
-      reporte_id: reporteId,
-      dispositivo_id: dispId,
-      clics: row.clicks || 0,
-      impresiones: row.impressions || 0,
-      ctr: parseFloat((row.ctr || 0).toFixed(4)),
-      posicion: parseFloat((row.position || 0).toFixed(2)),
-    });
-  }
-  if (filasDisp.length) {
-    await supabaseFetch(
-      "/rest/v1/metricas_dispositivos",
-      env,
-      "POST",
-      filasDisp,
-    );
+    // ── PÁGINAS ──
+    const filasGa4Paginas = (ga4Data.paginas.rows || [])
+      .slice(0, 20)
+      .map((row) => ({
+        reporte_id: reporteId,
+        url: row.dimensionValues[0].value || "/",
+        titulo: row.dimensionValues[1]?.value || null,
+        vistas: parseInt(row.metricValues[0].value) || 0,
+        usuarios: parseInt(row.metricValues[1].value) || 0,
+        duracion_media: parseFloat(row.metricValues[2].value) || 0,
+      }));
+    if (filasGa4Paginas.length) {
+      await supabaseFetch(
+        "/rest/v1/metricas_ga4_paginas",
+        env,
+        "POST",
+        filasGa4Paginas,
+      );
+    }
+
+    // ── PAÍSES ──
+    const paisesMap = await getPaisesMap(env);
+    const filasGa4Paises = [];
+    for (const row of ga4Data.paises.rows || []) {
+      const codigoISO2 = row.dimensionValues[0].value?.toUpperCase();
+      if (!codigoISO2) continue;
+      const paisId = paisesMap[codigoISO2];
+      if (!paisId) continue;
+      filasGa4Paises.push({
+        reporte_id: reporteId,
+        pais_id: paisId,
+        sesiones: parseInt(row.metricValues[0].value) || 0,
+        usuarios: parseInt(row.metricValues[1].value) || 0,
+      });
+    }
+    if (filasGa4Paises.length) {
+      await supabaseFetch(
+        "/rest/v1/metricas_ga4_paises",
+        env,
+        "POST",
+        filasGa4Paises,
+      );
+    }
+
+    // ── DISPOSITIVOS ──
+    const dispMap = await getDispositivosMap(env);
+    const filasGa4Disp = [];
+    for (const row of ga4Data.dispositivos.rows || []) {
+      const nombre = row.dimensionValues[0].value?.toUpperCase();
+      const dispId = dispMap[nombre];
+      if (!dispId) continue;
+      filasGa4Disp.push({
+        reporte_id: reporteId,
+        dispositivo_id: dispId,
+        sesiones: parseInt(row.metricValues[0].value) || 0,
+        usuarios: parseInt(row.metricValues[1].value) || 0,
+      });
+    }
+    if (filasGa4Disp.length) {
+      await supabaseFetch(
+        "/rest/v1/metricas_ga4_dispositivos",
+        env,
+        "POST",
+        filasGa4Disp,
+      );
+    }
   }
 }
-
-// ─── CATÁLOGOS ────────────────────────────────────────────
 
 let _paisesCache = null;
 async function getPaisesMap(env) {
@@ -428,7 +697,6 @@ async function getDispositivosMap(env) {
   return _dispCache;
 }
 
-// GA4 devuelve países en ISO-3, Supabase los tiene en ISO-2
 const ISO3_TO_ISO2 = {
   AFG: "AF",
   ALB: "AL",
@@ -630,8 +898,6 @@ function formatGA4Date(str) {
   return `${str.slice(0, 4)}-${str.slice(4, 6)}-${str.slice(6, 8)}`;
 }
 
-// ─── SUPABASE FETCH ───────────────────────────────────────
-
 function supabaseFetch(path, env, method = "GET", body = null) {
   return fetch(`${env.SUPABASE_URL}${path}`, {
     method,
@@ -644,8 +910,6 @@ function supabaseFetch(path, env, method = "GET", body = null) {
     body: body ? JSON.stringify(body) : null,
   });
 }
-
-// ─── GOOGLE AUTH ──────────────────────────────────────────
 
 async function getGoogleToken(env) {
   const sa = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT);

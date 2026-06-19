@@ -5,6 +5,7 @@ import ReportePage from "./pages/ReportePage";
 import NotFoundPage from "./pages/NotFoundPage";
 import LoginPage from "./pages/LoginPage";
 import AdminPage from "./pages/AdminPage";
+import ConfiguracionPage from "./pages/ConfiguracionPage";
 
 function App() {
   return (
@@ -23,6 +24,14 @@ function App() {
             element={
               <ProtectedRoute requireAdmin>
                 <AdminPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/configuracion"
+            element={
+              <ProtectedRoute>
+                <ConfiguracionPage />
               </ProtectedRoute>
             }
           />
